@@ -349,10 +349,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('offline', () => $('#offline-banner').classList.remove('hidden'));
   if (!navigator.onLine) $('#offline-banner').classList.remove('hidden');
 
-  const session = await Sync.getSession();
-  if (session) {
-    await bootMainScreen();
-  } else {
+  try {
+    const session = await Sync.getSession();
+    if (session) {
+      await bootMainScreen();
+    } else {
+      showScreen('auth');
+    }
+  } catch (err) {
     showScreen('auth');
+    $('#auth-error').textContent = err.message || 'Could not connect. Check your setup.';
   }
 });

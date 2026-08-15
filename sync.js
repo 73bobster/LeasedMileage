@@ -6,46 +6,62 @@
 
 // ── Fill these in with the same values MotoringMonitor's index.html
 // uses (Supabase dashboard → Project Settings → Data API / API Keys) ──
-const SUPABASE_URL = 'https://izqlirhiuzunwghwquog.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_GYHc9BeohzdBKNkEsY_ckA_kg0gDYCU';
-
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
 
 const QUEUE_KEY = 'leasedmileage_offline_queue';
+
+// Lazily create the Supabase client the first time it's needed, rather
+// than at script-load time. This way, if the CDN script failed to load
+// or the URL/key are still placeholders, the whole app doesn't crash
+// silently before `Sync` even gets defined — every Sync.* call below
+// throws a clear, specific error instead.
+let _supabase = null;
+function getClient() {
+  if (_supabase) return _supabase;
+  if (typeof window.supabase === 'undefined') {
+    throw new Error('Supabase library failed to load — check your internet connection and that the CDN script tag in index.html loaded correctly.');
+  }
+  if (SUPABASE_URL.includes('YOUR-PROJECT') || SUPABASE_ANON_KEY.includes('YOUR-ANON-KEY')) {
+    throw new Error('Supabase URL/key are still placeholders — edit SUPABASE_URL and SUPABASE_ANON_KEY at the top of sync.js.');
+  }
+  _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return _supabase;
+}
 
 const Sync = {
 
   // ---------- Auth ----------
 
   async signUp(email, password) {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await getClient().auth.signUp({ email, password });
     if (error) throw error;
     return data;
   },
 
   async signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await getClient().auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
   },
 
   async signOut() {
-    await supabase.auth.signOut();
+    await getClient().auth.signOut();
   },
 
   async getSession() {
-    const { data } = await supabase.auth.getSession();
+    const { data } = await getClient().auth.getSession();
     return data.session;
   },
 
   onAuthChange(callback) {
-    supabase.auth.onAuthStateChange((_event, session) => callback(session));
+    getClient().auth.onAuthStateChange((_event, session) => callback(session));
   },
 
   // ---------- Household ----------
 
   async getMyHouseholdId() {
-    const { data: sessionData } = await supabase.auth.getSession();
+    const { data: sessionData } = await getClient().auth.getSession();
     const userId = sessionData.session?.user?.id;
     if (!userId) return null;
     const { data, error } = await supabase
@@ -59,13 +75,13 @@ const Sync = {
   },
 
   async createHousehold() {
-    const { data, error } = await supabase.rpc('create_my_household');
+    const { data, error } = await getClient().rpc('create_my_household');
     if (error) throw error;
     return data;
   },
 
   async joinHousehold(code) {
-    const { data, error } = await supabase.rpc('join_household', { code });
+    const { data, error } = await getClient().rpc('join_household', { code });
     if (error) throw error;
     return data;
   },
@@ -164,12 +180,12 @@ const Sync = {
 
   async _write(op, table, payload, match) {
     if (op === 'insert') {
-      const { data, error } = await supabase.from(table).insert(payload).select().maybeSingle();
+      const { data, error } = await getClient().from(table).insert(payload).select().maybeSingle();
       if (error) throw error;
       return data;
     }
     if (op === 'update') {
-      const { data, error } = await supabase.from(table).update(payload).match(match).select().maybeSingle();
+      const { data, error } = await getClient().from(table).update(payload).match(match).select().maybeSingle();
       if (error) throw error;
       return data;
     }

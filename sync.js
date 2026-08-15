@@ -64,7 +64,7 @@ const Sync = {
     const { data: sessionData } = await getClient().auth.getSession();
     const userId = sessionData.session?.user?.id;
     if (!userId) return null;
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('household_members')
       .select('household_id')
       .eq('user_id', userId)
@@ -89,7 +89,7 @@ const Sync = {
   // ---------- Vehicles ----------
 
   async fetchVehicles(householdId) {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('vehicles')
       .select('*')
       .eq('household_id', householdId)
@@ -133,7 +133,7 @@ const Sync = {
   // ---------- Readings ----------
 
   async fetchLatestReading(vehicleId) {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('readings')
       .select('*')
       .eq('vehicle_id', vehicleId)

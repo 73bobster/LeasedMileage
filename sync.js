@@ -6,8 +6,8 @@
 
 // ── Fill these in with the same values MotoringMonitor's index.html
 // uses (Supabase dashboard → Project Settings → Data API / API Keys) ──
-const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
+const SUPABASE_URL = 'https://izqlirhiuzunwghwquog.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_GYHc9BeohzdBKNkEsY_ckA_kg0gDYCU';
 
 const QUEUE_KEY = 'leasedmileage_offline_queue';
 

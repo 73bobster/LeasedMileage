@@ -94,6 +94,7 @@ const Sync = {
       .select('*')
       .eq('household_id', householdId)
       .eq('archived', false)
+      .eq('ownership_type', 'leased')
       .order('created_at', { ascending: true });
     if (error) throw error;
     return data;
@@ -141,6 +142,19 @@ const Sync = {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
+  // Full reading history, oldest first — needed for the EWMA pace calc
+  // that matches MotoringMonitor's forecast formula.
+  async fetchReadings(vehicleId) {
+    const { data, error } = await getClient()
+      .from('readings')
+      .select('*')
+      .eq('vehicle_id', vehicleId)
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true });
     if (error) throw error;
     return data;
   },

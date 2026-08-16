@@ -89,8 +89,9 @@ async function bootMainScreen() {
 async function loadVehicles() {
   const rows = await Sync.fetchVehicles(householdId);
   vehicles = await Promise.all(rows.map(async (v) => {
-    const latest = await Sync.fetchLatestReading(v.id);
-    return { ...v, latestReading: latest };
+    const readings = await Sync.fetchReadings(v.id); // oldest first
+    const latestReading = readings.length ? readings[readings.length - 1] : null;
+    return { ...v, readings, latestReading };
   }));
   renderVehicles();
 }
@@ -99,44 +100,54 @@ function daysBetween(a, b) {
   return (b - a) / 86400000;
 }
 
-function calcProgress(vehicle) {
-  const current = vehicle.latestReading ? vehicle.latestReading.mileage : vehicle.opening_mileage;
-  const opening = vehicle.opening_mileage ?? 0;
-  const capped = vehicle.capped_miles;
-  const hasCapData = capped != null && vehicle.term_start && vehicle.term_end;
+const EWMA_ALPHA = 0.2;
 
-  let milesPct = null, timePct = null, forecastMiles = null, excessCost = null;
-
-  if (hasCapData) {
-    const termStart = new Date(vehicle.term_start);
-    const termEnd = new Date(vehicle.term_end);
-    const now = new Date();
-    const totalDays = Math.max(daysBetween(termStart, termEnd), 1);
-    const elapsedDays = Math.min(Math.max(daysBetween(termStart, now), 0), totalDays);
-
-    milesPct = capped > opening ? Math.min(100, ((current - opening) / (capped - opening)) * 100) : 0;
-    timePct = Math.min(100, (elapsedDays / totalDays) * 100);
-
-    // Straight-line forecast from pace so far. Needs at least a little
-    // elapsed time and mileage to be meaningful — otherwise treat the
-    // opening reading as the forecast baseline.
-    if (elapsedDays >= 1 && current > opening) {
-      const pace = (current - opening) / elapsedDays;
-      forecastMiles = opening + pace * totalDays;
-    } else {
-      forecastMiles = current;
-    }
-    const excess = Math.max(0, forecastMiles - capped);
-    excessCost = excess * (vehicle.cost_per_excess_mile || 0);
-  }
-
-  return { current, milesPct, timePct, forecastMiles, excessCost, hasCapData };
+function monthsBetween(days) {
+  return Math.round((days || 0) / 30.44);
 }
 
-function barClass(pct) {
-  if (pct >= 95) return 'bad';
-  if (pct >= 80) return 'warn';
-  return 'ok';
+// Ported directly from MotoringMonitor so both apps agree on the number.
+// `readings` must be oldest-first.
+function ewmaPace(readings) {
+  if (readings.length < 2) return null;
+  let pace = null;
+  for (let i = 1; i < readings.length; i++) {
+    const days = (new Date(readings[i].date) - new Date(readings[i - 1].date)) / 86400000;
+    if (days <= 0) continue;
+    const rate = (readings[i].mileage - readings[i - 1].mileage) / days;
+    pace = pace === null ? rate : (EWMA_ALPHA * rate + (1 - EWMA_ALPHA) * pace);
+  }
+  return pace;
+}
+
+function calcProgress(vehicle) {
+  const readings = vehicle.readings || [];
+  const latest = vehicle.latestReading;
+  const currentMileage = latest ? latest.mileage : 0;
+
+  let totalDays = 0, daysElapsed = 0, daysRemaining = 0;
+  if (vehicle.term_start && vehicle.term_end) {
+    const start = new Date(vehicle.term_start), end = new Date(vehicle.term_end), today = new Date();
+    totalDays = Math.max(1, Math.round((end - start) / 86400000));
+    daysElapsed = Math.min(totalDays, Math.max(0, Math.round((today - start) / 86400000)));
+    daysRemaining = Math.max(0, totalDays - daysElapsed);
+  }
+
+  const recentPace = ewmaPace(readings);
+  const lifetimeRate = daysElapsed > 0 ? currentMileage / daysElapsed : 0;
+  const rate = recentPace !== null ? recentPace : lifetimeRate;
+
+  const forecastMiles = currentMileage + rate * daysRemaining;
+  const capped = vehicle.capped_miles;
+  const variance = capped ? forecastMiles - capped : 0;
+  const excessCost = variance > 0 ? variance * (vehicle.cost_per_excess_mile || 0) : 0;
+
+  const milesPct = capped ? Math.min(150, (currentMileage / capped) * 100) : 0;
+  const timePct = totalDays > 0 ? Math.min(100, (daysElapsed / totalDays) * 100) : 0;
+
+  const hasCapData = capped != null && vehicle.term_start && vehicle.term_end;
+
+  return { current: currentMileage, milesPct, timePct, forecastMiles, excessCost, hasCapData, variance, totalDays, daysElapsed };
 }
 
 function renderVehicles() {
@@ -160,19 +171,22 @@ function renderVehicles() {
     let bars = '';
     let forecast = '';
     if (p.hasCapData) {
-      const mCls = barClass(p.milesPct);
+      // Matches MotoringMonitor exactly: the miles bar's colour is driven
+      // by forecast variance (are you on pace to go over?), not a raw
+      // percentage-used threshold. The time bar never changes colour.
+      const milesColor = p.variance > 0 ? 'var(--miles-over)' : 'var(--miles-under)';
       bars = `
         <div class="bar-row">
-          <div class="bar-row-labels"><span>Miles</span><span>${Math.round(p.milesPct)}%</span></div>
-          <div class="bar-track"><div class="bar-fill ${mCls}" style="width:${p.milesPct}%"></div></div>
+          <div class="bar-row-labels"><span>Miles</span><span>${p.current.toLocaleString()} used</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, p.milesPct)}%;background:${milesColor}"></div></div>
         </div>
         <div class="bar-row">
-          <div class="bar-row-labels"><span>Time</span><span>${Math.round(p.timePct)}%</span></div>
-          <div class="bar-track"><div class="bar-fill time" style="width:${p.timePct}%"></div></div>
-        </div>`;
-      const stripCls = p.excessCost > 0 ? (mCls === 'bad' ? 'bad' : 'warn') : 'ok';
+          <div class="bar-row-labels"><span>Time</span><span>${monthsBetween(p.daysElapsed)} of ${monthsBetween(p.totalDays)} mo</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:${p.timePct}%;background:var(--time-bar)"></div></div>
+        </div>
+        ${p.milesPct > p.timePct + 5 ? '<p class="pace-note">Using miles faster than the term is passing.</p>' : ''}`;
       forecast = `
-        <div class="forecast-strip ${stripCls}">
+        <div class="forecast-strip">
           <div class="col"><div class="label">Forecast</div><div class="value">${Math.round(p.forecastMiles).toLocaleString()} mi</div></div>
           <div class="col"><div class="label">Est. excess</div><div class="value">£${Math.round(p.excessCost).toLocaleString()}</div></div>
         </div>`;
@@ -188,7 +202,7 @@ function renderVehicles() {
           <p class="car-name">${escapeHtml(v.nickname)}</p>
           <p class="car-sub">${lastLoggedText}</p>
         </div>
-        <i class="ti ti-car" style="font-size:18px;color:var(--petrol-light)" aria-hidden="true"></i>
+        <i class="ti ti-car" style="font-size:18px;color:var(--ink-soft)" aria-hidden="true"></i>
       </div>
       ${bars}
       ${forecast}
@@ -335,6 +349,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   $('#add-car-btn').addEventListener('click', () => openVehicleScreen(null));
   $('#vehicle-back').addEventListener('click', () => showScreen('main'));
+  $('#vehicle-back-bottom').addEventListener('click', () => showScreen('main'));
   $('#vehicle-save').addEventListener('click', handleSaveVehicle);
   $('#logout-btn').addEventListener('click', async () => {
     await Sync.signOut();

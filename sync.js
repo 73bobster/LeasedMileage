@@ -6,26 +6,12 @@
 
 // ── Fill these in with the same values MotoringMonitor's index.html
 // uses (Supabase dashboard → Project Settings → Data API / API Keys) ──
-const SUPABASE_URL = 'https://izqlirhiuzunwghwquog.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_GYHc9BeohzdBKNkEsY_ckA_kg0gDYCU';
-
 const QUEUE_KEY = 'leasedmileage_offline_queue';
 
-// Lazily create the Supabase client the first time it's needed, rather
-// than at script-load time. This way, if the CDN script failed to load
-// or the URL/key are still placeholders, the whole app doesn't crash
-// silently before `Sync` even gets defined — every Sync.* call below
-// throws a clear, specific error instead.
 let _supabase = null;
 function getClient() {
   if (_supabase) return _supabase;
-  if (typeof window.supabase === 'undefined') {
-    throw new Error('Supabase library failed to load — check your internet connection and that the CDN script tag in index.html loaded correctly.');
-  }
-  if (SUPABASE_URL.includes('YOUR-PROJECT') || SUPABASE_ANON_KEY.includes('YOUR-ANON-KEY')) {
-    throw new Error('Supabase URL/key are still placeholders — edit SUPABASE_URL and SUPABASE_ANON_KEY at the top of sync.js.');
-  }
-  _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  _supabase = window.NeonCompat.client;
   return _supabase;
 }
 
@@ -36,17 +22,26 @@ const Sync = {
   async signUp(email, password) {
     const { data, error } = await getClient().auth.signUp({ email, password });
     if (error) throw error;
+    // Make sure we're signed in afterwards (Neon may not do it automatically).
+    const s = await getClient().auth.getSession();
+    if (!s.data.session) {
+      const r = await getClient().auth.signInWithPassword({ email, password });
+      if (r.error) throw r.error;
+    }
     return data;
   },
 
   async signIn(email, password) {
     const { data, error } = await getClient().auth.signInWithPassword({ email, password });
     if (error) throw error;
+    // Neon only announces sign-in to other tabs, so tell this tab ourselves.
+    if (this._cb) this._cb(data && data.session ? data.session : null);
     return data;
   },
 
   async signOut() {
     await getClient().auth.signOut();
+    if (this._cb) this._cb(null);
   },
 
   async getSession() {
@@ -55,6 +50,7 @@ const Sync = {
   },
 
   onAuthChange(callback) {
+    this._cb = callback;
     getClient().auth.onAuthStateChange((_event, session) => callback(session));
   },
 

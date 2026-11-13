@@ -1,21 +1,14 @@
 # LeasedMileage — setup
 
-A companion app to MotoringMonitor. Same Supabase project, same household
+A companion app to MotoringMonitor. Same Neon database, same household
 and vehicle data, no schema changes. Plain HTML/CSS/JS, no build step.
 
-## 1. Connect it to your Supabase project
+## 1. Database connection
 
-Open `sync.js` and replace the two placeholder values near the top:
-
-```js
-const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
-```
-
-Use the exact same values MotoringMonitor's `index.html` uses — find them
-in the Supabase dashboard under **Project Settings → Data API** (URL) and
-**API Keys** (anon key). Do not create a new Supabase project; this app
-is designed to read and write the same households, vehicles, and readings.
+The connection to the shared Neon project is set in `neon-compat.js`
+(the same values MotoringMonitor uses). Do not create a new database;
+this app is designed to read and write the same households, vehicles,
+and readings.
 
 ## 2. Run it locally
 
@@ -28,12 +21,12 @@ python3 -m http.server 8080
 ```
 
 Then open `http://localhost:8080` in a browser. Opening `index.html`
-directly via `file://` will not work — Supabase auth requires a proper
+directly via `file://` will not work — Neon auth requires a proper
 origin.
 
 ## 3. Smoke test checklist
 
-Run through this once against your real Supabase project before treating
+Run through this once against your real Neon database before treating
 it as done. All of it should also be checkable directly from MotoringMonitor's
 own screens, since both apps read the same tables.
 

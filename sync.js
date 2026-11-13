@@ -1,11 +1,11 @@
 // sync.js — data layer for LeasedMileage.
-// Talks to the SAME Supabase project as MotoringMonitor: same tables,
+// Talks to the SAME Neon database as MotoringMonitor: same tables,
 // same RLS policies, same households. This file only ever reads/writes
 // a subset of that schema (households, household_members, vehicles,
 // readings) and makes NO schema changes of its own.
 
-// ── Fill these in with the same values MotoringMonitor's index.html
-// uses (Supabase dashboard → Project Settings → Data API / API Keys) ──
+// Connection details live in neon-compat.js.
+
 const QUEUE_KEY = 'leasedmileage_offline_queue';
 
 let _supabase = null;
